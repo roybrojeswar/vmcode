@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="3f93f36f-72ee-4385-bd92-eb24e8c2575e" basePath="/vm">
+		<http:listener-connection host="0.0.0.0" port="8088" />
+	</http:listener-config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="ee0f0dd9-7cfe-4c3b-8f67-42090f863d53" basePath="/api/timezone">
+		<http:request-connection host="worldtimeapi.org" />
+	</http:request-config>
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="905f12b0-b8c8-4e30-b5a8-94a9f5a7c6d8" file="${env}.properties" key="${key}" >
+		<secure-properties:encrypt algorithm="Blowfish" mode="ECB"/>
+	</secure-properties:config>
+	<vm:config name="VM_Config" doc:name="VM Config" doc:id="1e1f04f7-aab9-4d24-843a-c0b2b19f1ed5" >
+		<vm:queues >
+			<vm:queue queueName="vmqueue" />
+		</vm:queues>
+	</vm:config>
+	<flow name="PublishVmFlow" doc:id="a6b2ff5d-53a8-4122-bd6c-82fc58950cf0" >
+		<http:listener doc:name="Listener" doc:id="a4f8c170-7243-4293-bae0-1163f0088113" config-ref="HTTP_Listener_config" path="/{region}/{city}"/>
+		<http:request doc:name="Request" doc:id="3ad89aa2-ce4d-4e1b-ba4c-a319542ad5b7" config-ref="HTTP_Request_configuration" path="/{region}/{city}" method="GET">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Accept" : "application/json",
+	"Content-Type" : "application/json"
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	city : attributes.uriParams.city,
+	region : attributes.uriParams.region
+}]]]></http:uri-params>
+		</http:request>
+		<ee:transform doc:name="Transform Message" doc:id="3e30417d-a5cf-4655-9587-3bd0d95ca02a" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+
+	payload ++ State:'WB'
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="375adad2-c624-40a2-a15c-1470a866f69f" message="before vm: ${secure::enc.key} ++ #[payload]" />
+		<vm:publish queueName="vmqueue" doc:name="Publish" doc:id="2f7a0d3d-a3f9-4f25-b76c-40c0eff928d0" config-ref="VM_Config" sendCorrelationId="AUTO"/>
+	</flow>
+	<flow name="ListnerVmFlow" doc:id="d738553a-0d2f-4b2b-a1a9-2f80a96e6e2d" >
+		<vm:listener doc:name="Listener" doc:id="ac3791ca-eafb-4de7-85dd-a16b3c6999c5" config-ref="VM_Config" queueName="vmqueue"/>
+		<ee:transform doc:name="Transform Message" doc:id="7a07ae96-7edd-4849-bde9-6906f82b73a3" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+
+	payload ++ OS:'MAC'
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="76da8999-ce30-48e3-93ec-e61651b05c10" message="after vm with modified payload: ${secure::enc.key} ++ #[payload]"/>
+	</flow>
+</mule>
